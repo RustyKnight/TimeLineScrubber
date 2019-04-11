@@ -64,9 +64,38 @@ class TimeLineView: UIView {
 		case .sixty: return 24
 		}
 	}
+
+	var font: UIFont = UIFont.systemFont(ofSize: 12.0) {
+		didSet {
+			invalidateIntrinsicContentSize()
+			setNeedsUpdateConstraints()
+			setNeedsLayout()
+			setNeedsDisplay()
+		}
+	}
+	
+	var majorTickColor: UIColor = UIColor.black {
+		didSet {
+			setNeedsDisplay()
+		}
+	}
+	
+	var minorTickColor: UIColor = UIColor.darkGray {
+		didSet {
+			setNeedsDisplay()
+		}
+	}
+	
+	var textColor: UIColor = UIColor.black {
+		didSet {
+			setNeedsDisplay()
+		}
+	}
+	
+	// Do we want control over the timeline color?
 	
 	var textSize: CGSize {
-		let size: CGSize = "00:00".size(withAttributes: [.font: UIFont.systemFont(ofSize: 12.0)])
+		let size: CGSize = "00:00".size(withAttributes: [.font: font])
 		return size
 	}
 
@@ -95,8 +124,11 @@ class TimeLineView: UIView {
 	
 	// The amount of empty space between elements
 	var spacer: CGFloat = 4
-	var tickHeight: CGFloat = 8
-	var lineHeight: CGFloat = 1
+	// Do we want control over the tick stroke thickness?
+	// Do we want control over the tick height?
+	let tickHeight: CGFloat = 8
+	// Do we want control over the timeline stroke thickness?
+	let lineHeight: CGFloat = 1
 	
 	var distanceBetweenMajorTicks: CGFloat {
 		return gap * 1.5
@@ -189,10 +221,13 @@ class TimeLineView: UIView {
 	override func draw(_ rect: CGRect) {
 		guard let ctx = UIGraphicsGetCurrentContext() else { return }
 		
-		let lineColor = UIColor.darkGray.cgColor
-		let textColor = UIColor.black
+		// This is minimum permissible height
+		let allHeight = textSize.height + spacer + tickHeight + lineHeight
+		// This should then center the content within the view, preventing it from been
+		// put of the edge of the view ;)
+		let yOffset = max(spacer, bounds.midY - (allHeight / 2))
 		
-		let textYPos = spacer
+		let textYPos = yOffset
 		let tickYPos = textYPos + textSize.height + spacer
 		let lineYPos = tickYPos + tickHeight
 		
@@ -201,11 +236,12 @@ class TimeLineView: UIView {
 
 		ctx.setLineCap(.round)
 		ctx.setLineWidth(lineHeight)
-		ctx.setStrokeColor(lineColor)
+		ctx.setStrokeColor(majorTickColor.cgColor)
 
 		ctx.beginPath()
-		ctx.move(to: CGPoint(x: 0, y: lineYPos))
-		ctx.addLine(to: CGPoint(x: bounds.width, y: lineYPos))
+		let spacing = offset
+		ctx.move(to: CGPoint(x: spacing, y: lineYPos))
+		ctx.addLine(to: CGPoint(x: bounds.width - spacing, y: lineYPos))
 		ctx.strokePath()
 
 		let calendar = Calendar.current
@@ -218,7 +254,6 @@ class TimeLineView: UIView {
 		var duration = 0.0
 		
 		var xPos = offset
-		let font = UIFont.systemFont(ofSize: 12.0)
 		let fontAttributes: [NSAttributedString.Key : Any] = [
 			NSAttributedString.Key.font: font,
 			NSAttributedString.Key.foregroundColor: textColor,
@@ -231,7 +266,7 @@ class TimeLineView: UIView {
 			let textRect = CGRect(x: textXPos, y: textYPos, width: size.width, height: size.height)
 			(text as NSString).draw(in: textRect, withAttributes: fontAttributes)
 			
-			ctx.setStrokeColor(lineColor)
+			ctx.setStrokeColor(majorTickColor.cgColor)
 			ctx.beginPath()
 			ctx.move(to: CGPoint(x: xPos, y: tickYPos))
 			ctx.addLine(to: CGPoint(x: xPos, y: tickYPos + tickHeight))
@@ -251,14 +286,14 @@ class TimeLineView: UIView {
 				let steps = calendar.dateComponents([.minute], from: fromTime, to: toTime).minute! / tickTimeDistance
 
 				let tickXStep = tickDistance / CGFloat(steps)
-				var tickXPos = xPos
+				var tickXPos = xPos + tickXStep
 
 				// Advance one tick, otherwise we're painting the current major tick position again
 				// And it's possible that we don't need to paint any sub ticks
 				tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
-				while tickTime <= date {
+				while tickTime < date {
 					tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
-					ctx.setStrokeColor(lineColor)
+					ctx.setStrokeColor(minorTickColor.cgColor)
 					ctx.beginPath()
 					ctx.move(to: CGPoint(x: tickXPos, y: tickYPos + (tickHeight / 2)))
 					ctx.addLine(to: CGPoint(x: tickXPos, y: tickYPos + tickHeight))
