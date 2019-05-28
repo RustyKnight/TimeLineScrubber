@@ -145,10 +145,12 @@ class TimeLineView: UIView {
 	
 	@objc func pinched(_ gesture: UIPinchGestureRecognizer) {
 		switch gesture.state {
-		case .began: currentScale = timeScale
+		case .began:
+			currentScale = timeScale
 		case .changed:
 			let pinchScale = gesture.scale
-			let value = (currentScale * Double(pinchScale)).rounded()
+			
+			let value = (currentScale / Double(pinchScale)).rounded()
 			timeScale = min(max(value, TimeInterval.minute), duration)
 			setNeedsDisplay()
 			invalidateIntrinsicContentSize()
@@ -278,3 +280,20 @@ class TimeLineView: UIView {
 	}
 	
 }
+
+//extension UIPinchGestureRecognizer {
+//	func scale(view: UIView) -> (x: CGFloat, y: CGFloat)? {
+//		if numberOfTouches > 1 {
+//			let touch1 = self.location(ofTouch: 0, in: view)
+//			let touch2 = self.location(ofTouch: 1, in: view)
+//			let deltaX = abs(touch1.x - touch2.x)
+//			let deltaY = abs(touch1.y - touch2.y)
+//			let sum = deltaX + deltaY
+//			if sum > 0 {
+//				let scale = self.scale
+//				return (1.0 + (scale - 1.0) * (deltaX / sum), 1.0 + (scale - 1.0) * (deltaY / sum))
+//			}
+//		}
+//		return nil
+//	}
+//}
