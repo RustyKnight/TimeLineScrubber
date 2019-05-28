@@ -8,61 +8,25 @@
 
 import UIKit
 
+extension TimeInterval {
+	static let day: TimeInterval = hour * 24
+	static let hour: TimeInterval = minute * 60
+	static let minute: TimeInterval = 60
+}
+
 class TimeLineView: UIView {
-	
-	// Scale
-	// 5, 15, 30, 60 mins
-	// 60 / 5 = 12 * 24 = 288 slots
-	// 60 / 15 = 4 * 24 = 96 slots
-	// 60 / 30 = 2 * 24 = 48 slots
-	// 60 / 1 = 1 * 24 = 24 slots
-	
-	enum TimeScale {
-		case five
-		case fifteen
-		case thirty
-		case sixty
 
-		var minutes: Int {
-			switch self {
-			case .five: return 5
-			case .fifteen: return 15
-			case .thirty: return 30
-			case .sixty: return 60
-			}
-		}
-		
-		fileprivate static let order: [TimeScale] = [.five, .fifteen, .thirty, .sixty]
-		
-		// Gets the next time scale based on the scale factor,
-		// where 1.0 is the current scale, < 1 are items to the left
-		// and > 1 are items to the right of the current element
-		func next(scaledBy scale: CGFloat) -> TimeScale {
-			// Where in the list is the current element
-			let index = TimeScale.order.firstIndex(of: self)!
-			// What is the distance between the slots
-			let range = (100.0 / Double(TimeScale.order.count + 1)) / 100.0
-			// Adjust the scale to so 1 == 0
-			let adjusted = 1.0 - scale
-			// Distance from the current value
-			let offset: CGFloat = adjusted / CGFloat(range)
-			// Our new index, range checked
-			let newIndex = min(TimeScale.order.count - 1, max(0, index + Int(offset)))
-			return TimeScale.order[newIndex]
-		}
-	}
+	// This represents the smallets unit displayed, like 1 minute, 30 seconds, what ever
+	var timeScale: TimeInterval = .hour //15 * TimeInterval.minute
+	// This represents the start of the timeline
+	var from: TimeInterval = 8 * TimeInterval.hour // Start of day
+	// This represents the amount of time covered by the timeline
+	// the end time is startInterval + duration
+	var duration: TimeInterval = 4 * TimeInterval.hour // 24 hours
 
-	var timeScale: TimeScale = .sixty
-
+	// How many "visual" slots are displayed.  This is based on the duration and the timeScale
 	var numberOfSlots: Int {
-		// This probably a thousand and one fancy pancy ways you could calculate
-		// this, but I used pen and paper ...
-		switch timeScale {
-		case .five: return 288
-		case .fifteen: return 96
-		case .thirty: return 48
-		case .sixty: return 24
-		}
+		return Int((duration / timeScale).rounded())
 	}
 
 	var font: UIFont = UIFont.systemFont(ofSize: 12.0) {
@@ -131,7 +95,15 @@ class TimeLineView: UIView {
 	let lineHeight: CGFloat = 1
 	
 	var distanceBetweenMajorTicks: CGFloat {
-		return gap * 1.5
+		// This is a crazy scaling process, where by, when the time scale is below
+		// one hour, we want to increase the distance between points
+		// by a factor of 4, basse on the time scale, so that at
+		// 1 miniute, it's scaled by 4 and 1 hour is scale by 1
+		let interval = max(60.0, min(timeScale, TimeInterval.hour))
+		let range = interval / TimeInterval.hour
+		let multipler = max(1, 4.0 - (4.0 * range))
+
+		return gap * CGFloat(multipler)
 	}
 	
 	var pinchGesture: UIPinchGestureRecognizer!
@@ -169,14 +141,15 @@ class TimeLineView: UIView {
 		return CGSize(width: width, height: height)
 	}
 	
-	var currentScale: TimeScale = .sixty
+	var currentScale: TimeInterval = .hour
 	
 	@objc func pinched(_ gesture: UIPinchGestureRecognizer) {
 		switch gesture.state {
 		case .began: currentScale = timeScale
 		case .changed:
 			let pinchScale = gesture.scale
-			timeScale = currentScale.next(scaledBy: pinchScale)
+			let value = (currentScale * Double(pinchScale)).rounded()
+			timeScale = min(max(value, TimeInterval.minute), duration)
 			setNeedsDisplay()
 			invalidateIntrinsicContentSize()
 			setNeedsUpdateConstraints()
@@ -186,26 +159,29 @@ class TimeLineView: UIView {
 		}
 	}
 	
-	fileprivate var secondsInDay: TimeInterval {
-		return 86400.0
-	}
+//	fileprivate var secondsInDay: TimeInterval {
+//		return 86400.0
+//	}
 	
-	fileprivate var startOfDay: Date {
+	fileprivate var startOfTimeLine: Date {
 		let calendar = Calendar.current
-		return calendar.startOfDay(for: Date())
-	}
-	
-	fileprivate var endOfDay: Date {
+		let startOfDay = calendar.startOfDay(for: Date())
+
 		var components = DateComponents()
-		components.day = 1
-		components.second = -1
-		let calendar = Calendar.current
+		components.second = Int(from.rounded())
 		return calendar.date(byAdding: components, to: startOfDay)!
+	}
+	
+	fileprivate var endOfTimeLine: Date {
+		var components = DateComponents()
+		components.second = Int(duration.rounded())
+		let calendar = Calendar.current
+		return calendar.date(byAdding: components, to: startOfTimeLine)!
 	}
 
 	func offset(forTimeInterval timeInterval: TimeInterval) -> CGFloat {
 		let range = distanceBetweenMajorTicks * CGFloat(numberOfSlots)
-		let percentOfDay = min(1.0, max(0.0, timeInterval / secondsInDay))
+		let percentOfDay = min(1.0, max(0.0, timeInterval / duration))
 		let point = range * CGFloat(percentOfDay)
 		let result = point
 		return result
@@ -214,12 +190,14 @@ class TimeLineView: UIView {
 	func timeInterval(forOffset position: CGFloat) -> TimeInterval {
 		let range = distanceBetweenMajorTicks * CGFloat(numberOfSlots)
 		let percent = min(1.0, max(0.0, position / range))
-		let time = secondsInDay * Double(percent)
+		let time = duration * Double(percent)
 		return time
 	}
 
 	override func draw(_ rect: CGRect) {
 		guard let ctx = UIGraphicsGetCurrentContext() else { return }
+
+		//!! Need to include a height/spacer element for events!!
 		
 		// This is minimum permissible height
 		let allHeight = textSize.height + spacer + tickHeight + lineHeight
@@ -227,11 +205,10 @@ class TimeLineView: UIView {
 		// put of the edge of the view ;)
 		let yOffset = max(spacer, bounds.midY - (allHeight / 2))
 		
-		let textYPos = yOffset
-		let tickYPos = textYPos + textSize.height + spacer
-		let lineYPos = tickYPos + tickHeight
-		
-		let tickTimeDistance = 5
+		let lineYPos = yOffset
+		let tickYPos = lineYPos
+		let textYPos = tickYPos + tickHeight + spacer
+
 		let tickDistance = distanceBetweenMajorTicks
 
 		ctx.setLineCap(.round)
@@ -243,23 +220,17 @@ class TimeLineView: UIView {
 		ctx.move(to: CGPoint(x: spacing, y: lineYPos))
 		ctx.addLine(to: CGPoint(x: bounds.width - spacing, y: lineYPos))
 		ctx.strokePath()
-
-		let calendar = Calendar.current
-		var date = self.startOfDay
-
-		// End of day, so we can stop painting sub ticks...
-		let endOfDay = self.endOfDay
-		
-		// The amount of seconds
-		var duration = 0.0
 		
 		var xPos = offset
 		let fontAttributes: [NSAttributedString.Key : Any] = [
 			NSAttributedString.Key.font: font,
 			NSAttributedString.Key.foregroundColor: textColor,
 			]
+		
+		var tickTime = from
 		for _ in 0...numberOfSlots {
-			let text = durationFormatter.string(from: duration)!
+			let text = durationFormatter.string(from: tickTime)!
+			tickTime += timeScale
 			//timeFormatter.string(from: date)
 			let size = (text as NSString).size(withAttributes: fontAttributes)
 			let textXPos = xPos - (size.width / 2)
@@ -272,35 +243,35 @@ class TimeLineView: UIView {
 			ctx.addLine(to: CGPoint(x: xPos, y: tickYPos + tickHeight))
 			ctx.strokePath()
 			
-			var tickTime = date
-			date = calendar.date(byAdding: .minute, value: timeScale.minutes, to: date)!
-			// Could use seconds since start of day I guess :P
-			duration += Double(timeScale.minutes * 60)
-
-			if tickTime <= endOfDay {
-				// This is used to calculate the number of sub ticks we need to paint, and therefore
-				// the amount of spacingneeded
-				let toTime = calendar.dateComponents([.hour, .minute, .day, .month, .year], from: date)
-				let fromTime = calendar.dateComponents([.hour, .minute, .day, .month, .year], from: tickTime)
-				
-				let steps = calendar.dateComponents([.minute], from: fromTime, to: toTime).minute! / tickTimeDistance
-
-				let tickXStep = tickDistance / CGFloat(steps)
-				var tickXPos = xPos + tickXStep
-
-				// Advance one tick, otherwise we're painting the current major tick position again
-				// And it's possible that we don't need to paint any sub ticks
-				tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
-				while tickTime < date {
-					tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
-					ctx.setStrokeColor(minorTickColor.cgColor)
-					ctx.beginPath()
-					ctx.move(to: CGPoint(x: tickXPos, y: tickYPos + (tickHeight / 2)))
-					ctx.addLine(to: CGPoint(x: tickXPos, y: tickYPos + tickHeight))
-					ctx.strokePath()
-					tickXPos += tickXStep
-				}
-			}
+//			var tickTime = date
+//			date = calendar.date(byAdding: .minute, value: timeScale.minutes, to: date)!
+//			// Could use seconds since start of day I guess :P
+//			duration += Double(timeScale.minutes * 60)
+//
+//			if tickTime <= endOfDay {
+//				// This is used to calculate the number of sub ticks we need to paint, and therefore
+//				// the amount of spacingneeded
+//				let toTime = calendar.dateComponents([.hour, .minute, .day, .month, .year], from: date)
+//				let fromTime = calendar.dateComponents([.hour, .minute, .day, .month, .year], from: tickTime)
+//
+//				let steps = calendar.dateComponents([.minute], from: fromTime, to: toTime).minute! / tickTimeDistance
+//
+//				let tickXStep = tickDistance / CGFloat(steps)
+//				var tickXPos = xPos + tickXStep
+//
+//				// Advance one tick, otherwise we're painting the current major tick position again
+//				// And it's possible that we don't need to paint any sub ticks
+//				tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
+//				while tickTime < date {
+//					tickTime = calendar.date(byAdding: .minute, value: tickTimeDistance, to: tickTime)!
+//					ctx.setStrokeColor(minorTickColor.cgColor)
+//					ctx.beginPath()
+//					ctx.move(to: CGPoint(x: tickXPos, y: tickYPos + (tickHeight / 2)))
+//					ctx.addLine(to: CGPoint(x: tickXPos, y: tickYPos + tickHeight))
+//					ctx.strokePath()
+//					tickXPos += tickXStep
+//				}
+//			}
 
 			xPos += tickDistance
 		}
